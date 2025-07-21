@@ -1,43 +1,51 @@
-# --- مرحله ۱: Builder ---
-# در این مرحله، کد پایتون به یک فایل اجرایی کامپایل می‌شود
-FROM python:3.10-slim as builder
+# -------------------- STAGE 1: The Builder --------------------
+# این مرحله تمام ابزارهای لازم برای کامپایل را نصب کرده و برنامه پایتون را به یک فایل اجرایی تبدیل می‌کند
+FROM python:3.10-slim AS builder
 
-# نصب نیازمندی‌های سیستمی (شامل ffmpeg برای پردازش صوت و build-essential برای کامپایل)
+# نصب وابستگی‌های سیستمی برای کامپایل
+# build-essential شامل کامپایلر C (مانند GCC) است که برای Nuitka ضروری است
+# ffmpeg همچنان نصب می‌شود تا اگر وابستگی‌ها در حین نصب به آن نیاز داشتند، مشکلی پیش نیاید
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential ffmpeg
+
+# تنظیم دایرکتوری کاری
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
 
-# نصب نیازمندی‌های پایتون
+# نصب Nuitka و وابستگی‌های پروژه
 COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir nuitka
 RUN pip install --no-cache-dir -r requirements.txt
 
-# کپی کردن سورس کد پروژه
+# کپی کردن کدهای برنامه
 COPY . .
 
-# کامپایل کردن اپلیکیشن با Nuitka
-# --standalone: تمام نیازمندی‌ها را در خروجی کپی می‌کند
-# --onefile: یک فایل اجرایی تکی میسازد
-# --output-dir: پوشه‌ای که خروجی در آن ذخیره می‌شود
-RUN python -m nuitka --onefile --output-dir=dist app.py
+# اجرای Nuitka برای کامپایل کردن برنامه
+# --standalone: تمام کتابخانه‌های مورد نیاز را در کنار فایل اجرایی قرار می‌دهد
+# --output-dir=dist: خروجی را در پوشه‌ی dist قرار می‌دهد
+RUN python -m nuitka --standalone --output-dir=dist app.py
 
-# --- مرحله ۲: Final ---
-# در این مرحله، فقط فایل اجرایی کامپایل شده به یک ایمیج نهایی سبک منتقل می‌شود
+
+# -------------------- STAGE 2: The Runner --------------------
+# این مرحله نهایی و بسیار سبک است و فقط فایل‌های کامپایل شده را اجرا می‌کند
 FROM python:3.10-slim
 
-# نصب نیازمندی‌های سیستمی حداقلی که برای اجرای برنامه لازم است
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+# نصب وابستگی‌های سیستمی که در زمان اجرا نیاز هستند (نه برای کامپایل)
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 
+# تنظیم دایرکتوری کاری
 WORKDIR /app
 
-# کپی کردن فایل اجرایی کامپایل شده از مرحله Builder
-COPY --from=builder /app/dist/app.bin .
+# تنظیم متغیرهای محیطی
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
 
-# پورت 5000 را برای دسترسی به سرور باز کن
+# کپی کردن فایل‌های کامپایل شده از مرحله Builder
+# فقط پوشه dist (که حاوی فایل اجرایی و کتابخانه‌هایش است) کپی می‌شود
+COPY --from=builder /app/dist .
+
+# باز کردن پورت برنامه
 EXPOSE 5000
 
-# دستور اجرای برنامه کامپایل شده
+# اجرای برنامه کامپایل شده
+# به جای "python app.py"، فایل اجرایی ساخته شده توسط Nuitka را اجرا می‌کنیم
 CMD ["./app.bin"]
