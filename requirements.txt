@@ -1,0 +1,10 @@
+flask>=3.0
+flask-cors>=4.0
+openai==0.28
+pydub>=0.25
+requests>=2.31
+sentry-sdk>=2.0
+pytest>=8.2
+ffmpeg 
+python-dotenv>=0.21
+Nuitka>=1.8
